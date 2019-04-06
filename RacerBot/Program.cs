@@ -8,15 +8,17 @@ using Newtonsoft.Json.Linq;
 using ServiceStack;
 using Dijkstra.NET.Graph;
 using Dijkstra.NET.ShortestPath;
+using RacerBot.ApiClient;
 
 namespace RacerBot
 {
     class Program
     {
-        const string TetsMap = "test";
+        const string TestMap = "test";//OK
         const string MazeMap = "maze";
-        const string SpinMap = "spin";
-        const string LabirintMap = "labirint";
+        const string SpinMap = "spin";//OK
+        const string LabirintMap = "labirint";//OK
+        const string RiftMap = "rift";//OK
 
         static PlayerStatusEnum Status;
         static DirectionEnum Heading;
@@ -62,8 +64,8 @@ namespace RacerBot
             math = client.Get(new HelpMath());
             optimalSpeed = (math.MaxDuneSpeed + math.MinCanyonSpeed) / 2;
             Deltas = math.LocationDeltas.ToDictionary(i => i.Direction, i => i.Delta);
-            var sessionInfo =  client.Post(new Play { Map = SpinMap });;
-            //var sessionInfo = client.Get(new GetSession {SessionId = "Botstest"});
+            var sessionInfo =  client.Post(new Play { Map = MazeMap });
+            //var sessionInfo = client.Get(new GetSession {SessionId = $"Bots{RiftMap}" });
 
             SessionId = sessionInfo.SessionId;
             CurrentMap = new Map(sessionInfo.NeighbourCells, sessionInfo.Radius);
@@ -88,6 +90,9 @@ namespace RacerBot
                         pair.Value.Dx == delta.X && pair.Value.Dy == delta.Y && pair.Value.Dz == delta.Z);
                     heading = direc.Key;
                 }
+                
+                //bool driftWarning = false;
+                //int driftDown = 0;
 
                 while (true)
                 {
@@ -99,19 +104,39 @@ namespace RacerBot
                     
                     if (isTurn)
                     {
-                        Turn(heading, accel);
+                        var angle = Math.Abs((int) heading - (int) Heading);
+
+                        //foreach (var driftsAngle in math.DriftsAngles)
+                        //{
+                        //    if (driftsAngle.Angle>=angle && driftsAngle.MaxSpeed>=CurrentSpeed)
+                        //    {
+                        //        driftDown = CurrentSpeed - driftsAngle.MaxSpeed;
+                        //        driftWarning = true;
+                        //        heading = heading.TurnLeft();
+                        //    }
+                        //}
+
+                        //if (!driftWarning)
+                        //{
+                        //    heading = heading.TurnLeft();
+                        //}
+                        //else
+                        {
+                            //nexCell = CurrentMap.GetCell(CurrentCell.Item1, heading);
+                            Turn(heading, accel);
+                        }
                         break;
                     }
                     else
                     {
-                        if (!GoneCells.ContainsKey(nexCell.Item1.vector3))
+                        //if (!GoneCells.ContainsKey(nexCell.Item1.vector3))
                         {
                             heading = heading.TurnLeft();
                         }
-                        else
-                        {
-                            heading = heading.TurnRight();
-                        }
+                        //else
+                        //{
+                        //    heading = heading.TurnRight();
+                        //}
                     }
 
                 }
@@ -198,7 +223,7 @@ namespace RacerBot
                     foreach (DirectionEnum direction in Enum.GetValues(typeof(DirectionEnum)))
                     {
                         var neig = GetCell(cell.Value.Item1, direction);
-                        var cost = 1;
+                        var cost = 2;
                         if (GoneCells.ContainsKey(neig.Item1.vector3))
                         {
                             cost = 2+ GoneCells[neig.Item1.vector3];
@@ -212,11 +237,11 @@ namespace RacerBot
                             case CellType.Rock:
                                 break;
                             case CellType.DangerousArea:
-                                if (cell.Value.Item2 == CellType.Empty)
+                                if (cell.Value.Item2 != CellType.Pit)
                                     graph.Connect(invertedDictionary[cell.Value.Item1.vector3], invertedDictionary[neig.Item1.vector3], cost+1, "");
                                 break;
                             case CellType.Pit:
-                                if (cell.Value.Item2 == CellType.Empty)
+                                if (cell.Value.Item2 != CellType.DangerousArea)
                                     graph.Connect(invertedDictionary[cell.Value.Item1.vector3], invertedDictionary[neig.Item1.vector3], cost+1, "");
                                 break;
                         }
@@ -263,21 +288,10 @@ namespace RacerBot
         }
     }
 
-    [Route("/raceapi/Auth/Login", verbs: "POST")]
-    public class AuthLogin : IReturn<TokenResult>
-    {
-        public string Login { get; set; }
-        public string Password { get; set; }
-    }
-
     public class TokenResult
     {
         public string Token { get; set; }
     }
-
-    [Route("/raceapi/help/math", verbs: "GET")]
-    public class HelpMath : IReturn<MathResult>
-    { }
 
     public class MathResult
     {
@@ -307,26 +321,6 @@ namespace RacerBot
         public List<AngleType> Angles { get; set; }
 
         public List<LocationDelta> LocationDeltas { get; set; }
-    }
-
-    [Route("/raceapi/race", verbs: "POST")]
-    public class Play : IReturn<PlayerSessionInfo>
-    {
-        public string Map { get; set; }
-    }
-
-    [Route("/raceapi/race", verbs: "GET")]
-    public class GetSession : IReturn<PlayerSessionInfo>
-    {
-        public string SessionId { get; set; }
-    }
-
-    [Route("/raceapi/race/{sessionId}", verbs: "PUT")]
-    public class SetStep : IReturn<TurnResult>
-    {
-        public string SessionId { get; set; }
-        public string Direction { get; set; }
-        public int Acceleration { get; set; }
     }
 
     public enum DirectionEnum

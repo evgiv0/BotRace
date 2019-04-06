@@ -14,11 +14,19 @@ namespace RacerBot
 {
     class Program
     {
+        const string YinYangMap = "yinyang";
         const string TestMap = "test";//OK
-        const string MazeMap = "maze";
+        const string MazeMap = "maze";//Filed
+        const string The_MazeMap = "the_maze";
         const string SpinMap = "spin";//OK
         const string LabirintMap = "labirint";//OK
         const string RiftMap = "rift";//OK
+                                      //const string RiftMap = "rift";//OK
+
+        static bool isVisualize = true;
+
+        const string Server_1 = "http://51.15.100.12:5000";
+        const string Server_2 = "http://51.158.109.80:5000";
 
         static PlayerStatusEnum Status;
         static DirectionEnum Heading;
@@ -28,7 +36,7 @@ namespace RacerBot
         static Dictionary<DirectionEnum, DeltaLocation> Deltas { get; set; }
         static Graph<Vector3, string> graph;
 
-        static JsonServiceClient client = new JsonServiceClient("http://51.15.100.12:5000");
+        static JsonServiceClient client = new JsonServiceClient(Server_2);
 
         static JsonServiceClient visual = new JsonServiceClient("http://127.0.0.1:5000");
 
@@ -64,7 +72,7 @@ namespace RacerBot
             math = client.Get(new HelpMath());
             optimalSpeed = (math.MaxDuneSpeed + math.MinCanyonSpeed) / 2;
             Deltas = math.LocationDeltas.ToDictionary(i => i.Direction, i => i.Delta);
-            var sessionInfo =  client.Post(new Play { Map = MazeMap });
+            var sessionInfo =  client.Post(new Play { Map = The_MazeMap });
             //var sessionInfo = client.Get(new GetSession {SessionId = $"Bots{RiftMap}" });
 
             SessionId = sessionInfo.SessionId;
@@ -105,7 +113,10 @@ namespace RacerBot
                     if (isTurn)
                     {
                         var angle = Math.Abs((int) heading - (int) Heading);
-
+                        if (CurrentSpeed>0 && angle == 180)
+                        {
+                            accel = -30;
+                        }
                         //foreach (var driftsAngle in math.DriftsAngles)
                         //{
                         //    if (driftsAngle.Angle>=angle && driftsAngle.MaxSpeed>=CurrentSpeed)
@@ -148,23 +159,44 @@ namespace RacerBot
             switch (nexCell.Item2)
             {
                 case CellType.Empty:
+                    
                     accel = optimalSpeed - CurrentSpeed;
+                    var nextnetx = CurrentMap.GetCell(nexCell.Item1, direction);
+                    switch (nextnetx.Item2)
+                    {
+                        case CellType.Unknown:
+                            accel = math.DriftsAngles.FirstOrDefault(pair => pair.Angle == 180).MaxSpeed - CurrentSpeed -1;
+                            break;
+                        case CellType.Empty:
+                            break;
+                        case CellType.Rock:
+                            accel = math.DriftsAngles.FirstOrDefault(pair => pair.Angle == 180).MaxSpeed - CurrentSpeed -1;
+                            break;
+                        case CellType.DangerousArea:
+                            break;
+                        case CellType.Pit:
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
                     return true;
                 case CellType.Rock:
                     return false;
-                case CellType.DangerousArea://медлеенно
+                case CellType.DangerousArea://Холм - должны замедлиться
                     accel = math.MaxDuneSpeed - CurrentSpeed;
                     if (accel < -math.MaxAcceleration)
                     {
                         return false;
                     }
                     return true;
-                case CellType.Pit://быстро
+                case CellType.Pit://Яма - должны ускориться
                     accel = math.MinCanyonSpeed - CurrentSpeed;
                     if (accel > math.MaxAcceleration)
                     {
                         return false;
                     }
+                    return true;
+                case CellType.Unknown:
                     return true;
                 default: return false;
             }
@@ -184,7 +216,7 @@ namespace RacerBot
                         if ((z > -radius) && (z < radius))
                         {
                             var coord = new Location() { X = x, Y = y, Z = z };
-                            var type = CellType.Empty;
+                            var type = CellType.Unknown;
                             if (Math.Max(Math.Max(x,y),z) == radius-1 || Math.Min(Math.Min(x, y), z) == -radius + 1)
                             {
                                 type = CellType.Rock;
@@ -236,13 +268,17 @@ namespace RacerBot
                                 break;
                             case CellType.Rock:
                                 break;
-                            case CellType.DangerousArea:
+                            case CellType.DangerousArea://Холм - должны замедлиться
                                 if (cell.Value.Item2 != CellType.Pit)
                                     graph.Connect(invertedDictionary[cell.Value.Item1.vector3], invertedDictionary[neig.Item1.vector3], cost+1, "");
                                 break;
-                            case CellType.Pit:
+                            case CellType.Pit://Яма - должны ускориться
                                 if (cell.Value.Item2 != CellType.DangerousArea)
-                                    graph.Connect(invertedDictionary[cell.Value.Item1.vector3], invertedDictionary[neig.Item1.vector3], cost+1, "");
+                                    graph.Connect(invertedDictionary[cell.Value.Item1.vector3], invertedDictionary[neig.Item1.vector3], cost+2, "");
+                                break;
+                            case CellType.Unknown:
+                                if(cell.Value.Item2 != CellType.DangerousArea)
+                                graph.Connect(invertedDictionary[cell.Value.Item1.vector3], invertedDictionary[neig.Item1.vector3], cost + 2, "");
                                 break;
                         }
                     }
@@ -283,10 +319,19 @@ namespace RacerBot
             {
                 GoneCells[CurrentCell.Item1.vector3]=1;
             }
-            visual.Get(new GetSession { SessionId = SessionId });
+
+            if (isVisualize)
+            {
+                visual.Get(new GetSession { SessionId = SessionId });
+            }
+
+            Console.WriteLine($"Direction: {direction}, Acceleration: {acceleration}");
             return turnResult;
         }
+
+
     }
+
 
     public class TokenResult
     {
@@ -398,7 +443,7 @@ namespace RacerBot
 
     public enum CellType
     {
-        Empty, Rock, DangerousArea, Pit
+        Empty, Rock, DangerousArea, Pit, Unknown
     }
 
     public enum PlayerStatusEnum
